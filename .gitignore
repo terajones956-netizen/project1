@@ -20,5 +20,5 @@ env/
 # checkpoints/
 # data/
 # Model checkpoints and large datasets
-checkpoints/
+
 data/

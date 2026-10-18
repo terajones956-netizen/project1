@@ -1,0 +1,73 @@
+{
+  "usable": [
+    "text",
+    "image",
+    "audio",
+    "video"
+  ],
+  "excluded": {},
+  "threshold": 0.55,
+  "video_file": "scores_video_effnet.json",
+  "eval": {
+    "random mix": {
+      "fusion": {
+        "auc": 0.9990175692932214,
+        "acc": 0.9874
+      },
+      "mean_baseline": {
+        "auc": 0.9961040547318118,
+        "acc": 0.9852
+      }
+    },
+    "text only": {
+      "fusion": {
+        "auc": 0.9999908743873832,
+        "acc": 0.9992
+      },
+      "mean_baseline": {
+        "auc": 0.9999908743873833,
+        "acc": 0.9982
+      }
+    },
+    "image only": {
+      "fusion": {
+        "auc": 0.9791969522682916,
+        "acc": 0.9266
+      },
+      "mean_baseline": {
+        "auc": 0.9791969522682915,
+        "acc": 0.9242
+      }
+    },
+    "audio only": {
+      "fusion": {
+        "auc": 0.9902756844109506,
+        "acc": 0.9596
+      },
+      "mean_baseline": {
+        "auc": 0.9902756844109506,
+        "acc": 0.9592
+      }
+    },
+    "video only": {
+      "fusion": {
+        "auc": 0.98308852150042,
+        "acc": 0.9274
+      },
+      "mean_baseline": {
+        "auc": 0.98308852150042,
+        "acc": 0.8954
+      }
+    },
+    "all usable": {
+      "fusion": {
+        "auc": 0.9999998399826926,
+        "acc": 0.9996
+      },
+      "mean_baseline": {
+        "auc": 0.9999985598442328,
+        "acc": 0.9994
+      }
+    }
+  }
+}
