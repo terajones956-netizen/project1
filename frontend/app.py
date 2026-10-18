@@ -51,7 +51,11 @@ def start_backend():
 
 
 start_backend()
-
+try:
+    import torch, transformers
+    st.sidebar.caption(f"torch {torch.__version__} · transformers {transformers.__version__}")
+except Exception as e:
+    st.sidebar.error(f"torch import failed: {e}")
 # ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
