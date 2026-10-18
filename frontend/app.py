@@ -24,6 +24,34 @@ import streamlit as st
 API_BASE = "http://localhost:8000"
 PAGE_ICON = "🔍"
 
+import sys, threading
+import uvicorn
+
+ROOT = Path(__file__).resolve().parent.parent      # project1_recovered/
+BACKEND_DIR = ROOT / "backend"                      # change if main.py is elsewhere
+sys.path.insert(0, str(BACKEND_DIR))
+sys.path.insert(0, str(ROOT))
+
+
+@st.cache_resource(show_spinner="Starting backend and loading models …")
+def start_backend():
+    import main as backend_main
+    config = uvicorn.Config(backend_main.app, host="127.0.0.1", port=8000, log_level="warning")
+    server = uvicorn.Server(config)
+    threading.Thread(target=server.run, daemon=True).start()
+
+    for _ in range(120):
+        try:
+            if requests.get("http://127.0.0.1:8000/health", timeout=2).json().get("model_loaded"):
+                return True
+        except Exception:
+            pass
+        time.sleep(1)
+    return False
+
+
+start_backend()
+
 # ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
