@@ -3,9 +3,9 @@ torch==2.5.1
 torchvision==0.20.1
 torchaudio==2.5.1
 # ── NLP / Text ────────────────────────────────────────────
-transformers>=4.40.0
-tokenizers>=0.15.0
-huggingface_hub>=0.21.0
+transformers==4.46.3
+tokenizers==0.20.3
+huggingface_hub==0.26.2
 sentencepiece>=0.2.0
 
 # ── Audio ─────────────────────────────────────────────────
