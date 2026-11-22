@@ -7,7 +7,7 @@ Endpoints:
   POST /detect/image         — detect GAN/diffusion image
   POST /detect/audio         — detect voice cloning
   POST /detect/video         — detect deepfake video
-  POST /detect/multimodal    — detect using any combination of modalities
+  POST /detect/multimodal    — detect using any combination of modalities (at least 2)
   GET  /health               — liveness check
   GET  /modalities           — list supported modalities + dataset info
 """
@@ -44,7 +44,7 @@ app = FastAPI(
         "It is a 6-layer detection pipeline to check text, image, audio and video whether they are ai generated or human. "
         "MTech Dissertation — Combating the Rise of AI-Synthesized Malicious Content."
     ),
-    version="1.0.0",
+    version="1.1.0",
 )
 
 app.add_middleware(
@@ -105,6 +105,14 @@ def result_to_response(r: DetectionResult) -> DetectionResponse:
     )
 
 
+def _unlink(path: Optional[str]):
+    if path:
+        try:
+            os.unlink(path)
+        except OSError:
+            pass
+
+
 # ---------------------------------------------------------------------------
 # ENDPOINTS
 # ---------------------------------------------------------------------------
@@ -122,13 +130,19 @@ async def modalities():
         "modalities": {
             "text": {
                 "description": "Phishing emails, fake news, AI-written reviews",
-                "detector": "DistilRoBERTa fine-tuned classifier",
+                "detector": "DistilRoBERTa fine-tuned classifier (HC3 + PolitiFact/LIAR)",
                 "datasets": [
                     {
                         "name": "HC3 (Human-ChatGPT Comparison Corpus)",
                         "url": "https://huggingface.co/datasets/Hello-SimpleAI/HC3",
                         "size": "~40k pairs",
                         "note": "Human vs ChatGPT answers across domains",
+                    },
+                    {
+                        "name": "LIAR (PolitiFact-rated claims)",
+                        "url": "https://huggingface.co/datasets/ucsbnlp/liar",
+                        "size": "~12.8k claims",
+                        "note": "Claims rated by PolitiFact; used for false/true claim signal",
                     },
                     {
                         "name": "TuringBench",
@@ -266,18 +280,20 @@ async def detect_image(file: UploadFile = File(...), explain: bool = True):
 @app.post("/detect/audio", response_model=DetectionResponse, tags=["Detection"])
 async def detect_audio(file: UploadFile = File(...), explain: bool = True):
     """Detect voice cloning / synthetic speech."""
+    tmp_path = None
     try:
         contents = await file.read()
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
             tmp.write(contents)
             tmp_path = tmp.name
         audio, sr = librosa.load(tmp_path, sr=None, mono=True)
-        os.unlink(tmp_path)
         payload = InputPayload(audio_array=audio, audio_sr=sr)
         result = detector.predict(payload, explain=explain)
         return result_to_response(result)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        _unlink(tmp_path)
 
 
 # ── Video ─────────────────────────────────────────────────────────────────
@@ -298,11 +314,7 @@ async def detect_video(file: UploadFile = File(...), explain: bool = True):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
     finally:
-        if tmp_path:
-            try:
-                os.unlink(tmp_path)
-            except OSError:
-                pass
+        _unlink(tmp_path)
 
 
 # ── Multimodal ────────────────────────────────────────────────────────────
@@ -315,49 +327,50 @@ async def detect_multimodal(
     video: Optional[UploadFile] = File(None),
     explain: bool = True,
 ):
-    """Fuse any combination of text / image / audio / video for a single authenticity score."""
+    """Fuse at least 2 of text / image / audio / video for a single authenticity score."""
     payload = InputPayload()
     tmp_files = []
-
-    if text:
-        payload.text = text
-
-    if image:
-        contents = await image.read()
-        nparr = np.frombuffer(contents, np.uint8)
-        img = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
-        payload.image_array = img
-
-    if audio:
-        contents = await audio.read()
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(contents)
-            tmp_files.append(tmp.name)
-        aud, sr = librosa.load(tmp_files[-1], sr=None, mono=True)
-        payload.audio_array = aud
-        payload.audio_sr = sr
-
-    if video:
-        contents = await video.read()
-        suffix = Path(video.filename).suffix or ".mp4"
-        with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
-            tmp.write(contents)
-            tmp_files.append(tmp.name)
-        payload.video_path = tmp_files[-1]
-
-    if not payload.active_modalities:
-        raise HTTPException(status_code=400, detail="At least one modality input is required.")
-
     try:
+        if text:
+            payload.text = text
+
+        if image:
+            contents = await image.read()
+            nparr = np.frombuffer(contents, np.uint8)
+            payload.image_array = cv2.imdecode(nparr, cv2.IMREAD_COLOR)   # None if undecodable
+
+        if audio:
+            contents = await audio.read()
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+                tmp.write(contents)
+                tmp_files.append(tmp.name)
+            aud, sr = librosa.load(tmp_files[-1], sr=None, mono=True)
+            payload.audio_array = aud
+            payload.audio_sr = sr
+
+        if video:
+            contents = await video.read()
+            suffix = Path(video.filename).suffix or ".mp4"
+            with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
+                tmp.write(contents)
+                tmp_files.append(tmp.name)
+            payload.video_path = tmp_files[-1]
+
+        if len(list(payload.active_modalities)) < 2:
+            raise HTTPException(
+                status_code=400,
+                detail="At least 2 usable modalities are required for multimodal output.",
+            )
+
         result = detector.predict(payload, explain=explain)
+        return result_to_response(result)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         for f in tmp_files:
-            try:
-                os.unlink(f)
-            except OSError:
-                pass
-
-    return result_to_response(result)
+            _unlink(f)
 
 
 # ---------------------------------------------------------------------------

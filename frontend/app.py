@@ -24,13 +24,23 @@ import streamlit as st
 API_BASE = "http://localhost:8000"
 PAGE_ICON = "🔍"
 
+
 import sys, threading
 import uvicorn
+
+try:
+    import torch, transformers
+    st.sidebar.caption(f"torch {torch.__version__} · transformers {transformers.__version__}")
+except Exception as e:
+    st.sidebar.error(f"torch import failed: {e}")
 
 ROOT = Path(__file__).resolve().parent.parent      # project1_recovered/
 BACKEND_DIR = ROOT / "backend"                      # change if main.py is elsewhere
 sys.path.insert(0, str(BACKEND_DIR))
 sys.path.insert(0, str(ROOT))
+
+# Multimodal tab (needs the sys.path entries above; it adds model/ to the path itself)
+from multimodal_tab import render_multimodal_tab
 
 
 @st.cache_resource(show_spinner="Starting backend and loading models …")
@@ -51,11 +61,25 @@ def start_backend():
 
 
 start_backend()
-try:
-    import torch, transformers
-    st.sidebar.caption(f"torch {torch.__version__} · transformers {transformers.__version__}")
-except Exception as e:
-    st.sidebar.error(f"torch import failed: {e}")
+
+
+def find_fusion():
+    """Return the trained FusionLayer from the backend's global `detector`, or None.
+    Used for the exact (leave-one-out) reasoning in the Multimodal tab."""
+    try:
+        import main as backend_main
+        det = getattr(backend_main, "detector", None)
+        if det is None:
+            return None
+        for name, obj in vars(det).items():
+            if obj.__class__.__name__ == "FusionLayer" or (
+                    "fusion" in name.lower() and hasattr(obj, "net")):
+                return obj
+    except Exception:
+        pass
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Page setup
 # ---------------------------------------------------------------------------
@@ -326,51 +350,11 @@ with tab_video:
                 render_result(result)
 
 # ---------------------------------------------------------------------------
-# Tab: Multimodal
+# Tab: Multimodal  (at least 2 inputs mandatory; exact reasoning + trust score)
 # ---------------------------------------------------------------------------
 
 with tab_multi:
-    st.markdown("### 🔀 Multimodal Fusion Detection")
-    st.caption(
-        "Combine any or all modalities. The fusion layer (Layer 4) learns optimal weights "
-        "to produce a single authenticity score."
-    )
-    st.info(
-        "💡 Tip: Use multiple modalities together for higher accuracy than any single detector."
-    )
-
-    multi_text = st.text_area(
-        "Text (optional):",
-        height=100,
-        placeholder="Paste suspicious email, caption, or message …",
-    )
-    col_img, col_aud, col_vid = st.columns(3)
-    with col_img:
-        multi_img = st.file_uploader("Image (optional)", type=["jpg", "jpeg", "png", "webp"], key="m_img")
-    with col_aud:
-        multi_aud = st.file_uploader("Audio (optional)", type=["wav", "mp3", "flac"], key="m_aud")
-    with col_vid:
-        multi_vid = st.file_uploader("Video (optional)", type=["mp4", "avi", "mov"], key="m_vid")
-
-    if st.button("🔍 Run Multimodal Analysis", type="primary"):
-        has_input = any([multi_text.strip(), multi_img, multi_aud, multi_vid])
-        if not has_input:
-            st.warning("Please provide at least one modality input.")
-        else:
-            data = {}
-            files = {}
-            if multi_text.strip():
-                data["text"] = multi_text
-            if multi_img:
-                files["image"] = (multi_img.name, multi_img.getvalue(), multi_img.type)
-            if multi_aud:
-                files["audio"] = (multi_aud.name, multi_aud.getvalue(), "audio/wav")
-            if multi_vid:
-                files["video"] = (multi_vid.name, multi_vid.getvalue(), "video/mp4")
-
-            result = call_api("/detect/multimodal", data=data, files=files if files else None)
-            if result:
-                render_result(result)
+    render_multimodal_tab(call_api, render_result, fusion=find_fusion())
 
 # ---------------------------------------------------------------------------
 # Tab: Datasets

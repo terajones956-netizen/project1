@@ -37,7 +37,7 @@ from pathlib import Path
 import numpy as np
 import torch
 import torch.nn.functional as F
-from sklearn.metrics import accuracy_score, roc_auc_score
+from sklearn.metrics import (accuracy_score, roc_auc_score, precision_score, recall_score, f1_score)
 
 HERE = Path(__file__).resolve().parent
 for p in (HERE.parent / "model", HERE.parent, HERE):
@@ -103,8 +103,12 @@ def mean_baseline(X):
 
 
 def report(name, y, p):
+    pred = (p >= THRESHOLD).astype(int)
     return {"auc": float(roc_auc_score(y, p)),
-            "acc": float(accuracy_score(y, (p >= THRESHOLD).astype(int)))}
+            "acc": float(accuracy_score(y, pred)),
+            "precision": float(precision_score(y, pred, zero_division=0)),  # positive = fake (1)
+            "recall": float(recall_score(y, pred, zero_division=0)),
+            "f1": float(f1_score(y, pred, zero_division=0))}
 
 
 def main():
@@ -187,7 +191,7 @@ def main():
 
     # ---- evaluate on TEST-pool samples (never used for training) ----
     print(f"\nEvaluation on samples drawn from the TEST pools (threshold {THRESHOLD}):")
-    print(f"{'inputs shown':<28} {'fusion AUC':<11} {'fusion acc':<11} {'mean-score AUC':<15} {'mean-score acc'}")
+    print(f"{'inputs shown':<18} {'':<9} {'AUC':<7} {'acc':<7} {'prec':<7} {'recall':<7} {'F1':<7}")
     rows = {}
     subsets = [("random mix", None)] + [(f"{m} only", [m]) for m in usable]
     if len(usable) > 1:
@@ -197,7 +201,9 @@ def main():
         f = report(name, y, fusion_probs(fusion, X))
         b = report(name, y, mean_baseline(X))
         rows[name] = {"fusion": f, "mean_baseline": b}
-        print(f"{name:<28} {f['auc']:<11.3f} {f['acc']:<11.3f} {b['auc']:<15.3f} {b['acc']:.3f}")
+        for tag, r in (("fusion", f), ("mean", b)):
+            print(f"{name if tag == 'fusion' else '':<18} {tag:<9} {r['auc']:<7.3f} {r['acc']:<7.3f} "
+                f"{r['precision']:<7.3f} {r['recall']:<7.3f} {r['f1']:<7.3f}")
     print("\nIf 'fusion' is not clearly better than 'mean-score' on the mixed rows, the plain average "
           "is just as good - report that honestly.")
     print("Reminder: modalities are paired synthetically (independent errors), so these numbers are optimistic.")
